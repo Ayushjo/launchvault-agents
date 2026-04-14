@@ -35,6 +35,7 @@ def synthesize(
     milestone_description: str,
     github_result: dict | None,
     document_result: dict | None,
+    osint_result: dict | None = None,
 ) -> dict:
     """
     Synthesize all agent signals into a final score and write to chain.
@@ -89,6 +90,28 @@ DOCUMENT ANALYSIS:
     else:
         sections.append("DOCUMENT ANALYSIS: Not provided")
 
+    if osint_result:
+        sections.append(f"""
+OSINT / ENTITY VERIFICATION:
+  Company: {osint_result.get("company_name", "unknown")}
+  Overall Score: {osint_result.get("score", 0)} / 10000
+  Verdict: {osint_result.get("verdict", "PARTIAL")}
+  Confidence: {osint_result.get("confidence", 0)} / 10000
+  Signal Breakdown:
+    - Domain Intelligence:   {osint_result.get("signals", {}).get("domain_intelligence", 0)}
+    - Company Registration:  {osint_result.get("signals", {}).get("company_registration", 0)}
+    - Web Presence:          {osint_result.get("signals", {}).get("web_presence", 0)}
+    - News Coverage:         {osint_result.get("signals", {}).get("news_coverage", 0)}
+    - Team Verification:     {osint_result.get("signals", {}).get("team_verification", 0)}
+  Consistency Assessment: {osint_result.get("consistency_assessment", "none")}
+  Strongest Positive: {osint_result.get("strongest_positive", "none")}
+  Strongest Concern: {osint_result.get("strongest_concern", "none")}
+  Verified Facts: {json.dumps(osint_result.get("verified_facts", [])[:5], indent=4)}
+  Flags: {json.dumps(osint_result.get("flags", [])[:5], indent=4)}
+""")
+    else:
+        sections.append("OSINT / ENTITY VERIFICATION: Not performed")
+
     context = "\n".join(sections)
 
     # ── Step 2 — Claude synthesis ─────────────────────────────────
@@ -112,12 +135,20 @@ Based on all signals above, provide your final assessment as a JSON object:
   "recommendation_to_investors": "<one sentence plain English advice>"
 }}
 
+Signal weighting guidance:
+  - OSINT is foundational: if the entity itself is unverified or suspicious,
+    discount all other signals heavily regardless of how good they look.
+  - GitHub and documents verify the MILESTONE; OSINT verifies the ENTITY.
+    Both must be credible for a high score.
+  - A legitimate company with weak GitHub signal = 50-65 score.
+  - A suspicious entity with perfect GitHub signal = 20-45 score (could be faked).
+
 Scoring guide:
-  8000-10000: Strong evidence milestone was achieved, minimal concerns
-  6000-7999:  Likely achieved but some gaps in evidence
-  4000-5999:  Uncertain, evidence is mixed or insufficient
-  2000-3999:  Likely not achieved, significant concerns
-  0-1999:     Strong evidence of non-completion or fraud
+  8000-10000: Strong evidence milestone achieved by a verified, legitimate entity
+  6000-7999:  Likely achieved, entity appears legitimate but some gaps
+  4000-5999:  Uncertain — mixed evidence or insufficient verification
+  2000-3999:  Significant concerns about milestone OR entity legitimacy
+  0-1999:     Strong evidence of non-completion, fraud, or non-existent entity
 
 Respond ONLY with the JSON object."""
 
@@ -194,6 +225,7 @@ Respond ONLY with the JSON object."""
         "signals": {
             "github": github_result.get("score") if github_result else None,
             "document": document_result.get("score") if document_result else None,
+            "osint": osint_result.get("score") if osint_result else None,
             "final": final_score,
         },
         "blockchain": {

@@ -69,28 +69,55 @@ async def verify(
     milestone_index: int = Form(...),
     milestone_description: str = Form(...),
     github_url: str = Form(default=""),
+    company_name: str = Form(default=""),
+    company_website: str = Form(default=""),
+    team_members: str = Form(default=""),  # comma-separated names
     files: list[UploadFile] = File(default=[]),
 ):
     """
     Full verification pipeline:
-      1. Document forensics (if files uploaded — PDF/JPG/PNG/WEBP)
-      2. GitHub analysis (if github_url provided)
-      3. Claude synthesis
-      4. Oracle writes final score on-chain
-      5. Returns full report
-
-    Response shape:
-    {
-      "final_score": 7500,          // 0-10000, written on-chain
-      "tx_hash": "0x...",
-      "reasoning": "...",
-      "github": { score, confidence, signals, flags, ... } | null,
-      "documents": { score, confidence, doc_count, flags, ... } | null,
-      "flags": ["..."]
-    }
+      1. OSINT entity verification (if company_name provided)
+      2. Document forensics (if files uploaded — PDF/JPG/PNG/WEBP)
+      3. GitHub analysis (if github_url provided)
+      4. Claude synthesis of all signals
+      5. Oracle writes final score on-chain
+      6. Returns full report
     """
 
-    # ── 1. Document analysis ──────────────────────────────────────
+    # ── 0. Parse team members ────────────────────────────────────
+    team_list = (
+        [t.strip() for t in team_members.split(",") if t.strip()]
+        if team_members.strip() else []
+    )
+
+    # ── 1. OSINT analysis ─────────────────────────────────────────
+    osint_result = None
+    if company_name.strip():
+        try:
+            osint_mod = _load("osint_agent/agent.py")
+            osint_result = osint_mod.analyze_entity(
+                company_name=company_name.strip(),
+                milestone_description=milestone_description,
+                website=company_website.strip() or None,
+                github_url=github_url.strip() or None,
+                team_members=team_list or None,
+            )
+        except Exception as e:
+            osint_result = {
+                "score": 5000,
+                "confidence": 1000,
+                "verdict": "PARTIAL",
+                "flags": [f"OSINT analysis error: {str(e)}"],
+                "verified_facts": [],
+                "signals": {},
+                "consistency_assessment": "",
+                "strongest_positive": "",
+                "strongest_concern": "",
+                "recommendation": "",
+                "company_name": company_name,
+            }
+
+    # ── 2. Document analysis ──────────────────────────────────────
     document_result = None
     if files:
         allowed_ext = {".pdf", ".jpg", ".jpeg", ".png", ".webp"}
@@ -141,10 +168,10 @@ async def verify(
             }
 
     # ── 3. Synthesis + on-chain write ─────────────────────────────
-    if not document_result and not github_result:
+    if not document_result and not github_result and not osint_result:
         raise HTTPException(
             status_code=400,
-            detail="Provide at least one of: files (documents) or github_url",
+            detail="Provide at least one of: company_name (OSINT), files (documents), or github_url",
         )
 
     try:
@@ -155,6 +182,7 @@ async def verify(
             milestone_description=milestone_description,
             github_result=github_result,
             document_result=document_result,
+            osint_result=osint_result,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Synthesis failed: {str(e)}")
@@ -173,6 +201,7 @@ async def verify(
         "blockchain_error": blockchain.get("error"),
         "github": github_result,
         "documents": document_result,
+        "osint": osint_result,
     }
 
 
