@@ -27,7 +27,8 @@ load_dotenv()
 
 app = FastAPI(title="LaunchVault Agent Server", version="1.0.0")
 
-# Allow frontend dev server (Vite default port) and any localhost origin
+# Allow frontend origins — localhost for dev, Vercel for production
+_EXTRA_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -35,7 +36,9 @@ app.add_middleware(
         "http://localhost:5174",
         "http://localhost:3000",
         "http://127.0.0.1:5173",
+        *_EXTRA_ORIGINS,
     ],
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
