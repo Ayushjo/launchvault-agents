@@ -121,33 +121,31 @@ async def verify(
             }
 
     # ── 2. Document analysis ──────────────────────────────────────
-    document_result = None
-    if files:
-        allowed_ext = {".pdf", ".jpg", ".jpeg", ".png", ".webp"}
-        file_data = []
-        for upload in files:
-            ext = Path(upload.filename or "").suffix.lower()
-            if ext not in allowed_ext:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Unsupported file type: {upload.filename}. Allowed: PDF, JPG, PNG, WEBP",
-                )
-            content = await upload.read()
-            file_data.append((upload.filename, content))
+    allowed_ext = {".pdf", ".jpg", ".jpeg", ".png", ".webp"}
+    file_data = []
+    for upload in files:
+        ext = Path(upload.filename or "").suffix.lower()
+        if ext not in allowed_ext:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported file type: {upload.filename}. Allowed: PDF, JPG, PNG, WEBP",
+            )
+        content = await upload.read()
+        file_data.append((upload.filename, content))
 
-        try:
-            doc_mod = _load("document_agent/agent.py")
-            document_result = doc_mod.run_full_analysis(file_data, milestone_description)
-        except Exception as e:
-            # Document analysis failure is non-fatal — flag it and continue
-            document_result = {
-                "score": 5000,
-                "confidence": 1000,
-                "doc_count": len(file_data),
-                "flags": [f"Document analysis error: {str(e)}"],
-                "signals": {"document_forensics": 5000, "llm_consistency": 5000},
-                "llm_reasoning": "",
-            }
+    try:
+        doc_mod = _load("document_agent/agent.py")
+        document_result = doc_mod.run_full_analysis(file_data, milestone_description)
+    except Exception as e:
+        # Document analysis failure is non-fatal — flag it and continue
+        document_result = {
+            "score": 5000,
+            "confidence": 1000,
+            "doc_count": len(file_data),
+            "flags": [f"Document analysis error: {str(e)}"],
+            "signals": {"document_forensics": 5000, "llm_consistency": 5000},
+            "llm_reasoning": "",
+        }
 
     # ── 2. GitHub analysis ────────────────────────────────────────
     github_result = None

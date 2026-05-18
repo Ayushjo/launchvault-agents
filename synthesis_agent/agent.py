@@ -256,6 +256,7 @@ def run_full_pipeline(
     """
     github_result = None
     document_result = None
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
     # GitHub analysis
     if repo_url:
@@ -264,7 +265,7 @@ def run_full_pipeline(
             import importlib.util
 
             gh_agent_path = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                base_dir,
                 "github_agent",
                 "agent.py",
             )
@@ -278,31 +279,36 @@ def run_full_pipeline(
         except Exception as e:
             print(f"GitHub analysis failed: {e}")
 
-    # Document analysis
-    if document_paths:
-        print(f"\nAnalyzing {len(document_paths)} document(s)...")
-        try:
-            import importlib.util
+    # Document analysis. Always invoke the document agent so "no documents"
+    # is represented as an explicit signal in the final report.
+    print(
+        f"\nAnalyzing {len(document_paths or [])} document(s)..."
+        if document_paths
+        else "\nAnalyzing documents: none provided"
+    )
+    try:
+        import importlib.util
 
-            doc_agent_path = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                "document_agent",
-                "agent.py",
-            )
-            spec = importlib.util.spec_from_file_location(
-                "document_agent", doc_agent_path
-            )
-            doc_module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(doc_module)
+        doc_agent_path = os.path.join(
+            base_dir,
+            "document_agent",
+            "agent.py",
+        )
+        spec = importlib.util.spec_from_file_location(
+            "document_agent", doc_agent_path
+        )
+        doc_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(doc_module)
 
-            files = []
+        files = []
+        if document_paths:
             for path in document_paths:
                 with open(path, "rb") as f:
                     files.append((os.path.basename(path), f.read()))
-            document_result = doc_module.run_full_analysis(files, milestone_description)
-            print(f"Document score: {document_result['score']}/10000")
-        except Exception as e:
-            print(f"Document analysis failed: {e}")
+        document_result = doc_module.run_full_analysis(files, milestone_description)
+        print(f"Document score: {document_result['score']}/10000")
+    except Exception as e:
+        print(f"Document analysis failed: {e}")
 
     # Synthesis
     print(f"\nSynthesizing signals...")
